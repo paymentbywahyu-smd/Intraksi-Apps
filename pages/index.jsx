@@ -163,20 +163,27 @@ export default function App() {
     e.preventDefault();
     if (!user) return;
 
+    // AMBIL DATA DARI FORM DENGAN CARA YANG LEBIH AMAN
+    const target = e.target;
     const newProfile = {
-      namaUsaha: e.target.namaUsaha.value.toUpperCase(),
-      pemilik: e.target.namaPemilik.value.toUpperCase(),
-      modalAwal: parseFloat(e.target.modalAwal.value),
-      whatsapp: e.target.whatsapp.value,
-      email: e.target.email.value,
+      namaUsaha: target[1].value.toUpperCase(), // INPUT KEDUA (NAMA USAHA)
+      pemilik: target[0].value.toUpperCase(),   // INPUT PERTAMA (NAMA PEMILIK)
+      modalAwal: parseFloat(target[3].value) || 0,
+      whatsapp: target[2].value,
+      email: target[4].value,
       config: DEFAULT_CONFIG,
       createdAt: new Date().toISOString()
     };
 
     try {
+      console.log("MENCOBA MENYIMPAN PROFIL...");
       await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'settings'), newProfile);
+      console.log("PROFIL BERHASIL DISIMPAN!");
+      // REFRESH HALAMAN AGAR STATE PROFILE TER-UPDATE
+      window.location.reload(); 
     } catch (error) {
       console.error("REGISTRATION ERROR:", error);
+      alert("GAGAL MENYIMPAN KE DATABASE: " + error.message);
     }
   };
 
