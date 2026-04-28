@@ -51,13 +51,22 @@ import {
 } from 'firebase/firestore';
 
 // INITIALIZE FIREBASE FROM ENVIRONMENT
-const firebaseConfig = JSON.parse(__firebase_config);
+// INITIALIZE FIREBASE DIRECTLY
+const firebaseConfig = {
+  apiKey: "AIzaSyCCpjTjBCU1HnjCXrA8rb-VuWC67bWmvhw",
+  authDomain: "intranksi-ppob.firebaseapp.com",
+  projectId: "intranksi-ppob",
+  storageBucket: "intranksi-ppob.firebasestorage.app",
+  messagingSenderId: "729305891845",
+  appId: "1:729305891845:web:feb0d2141d275efecf486c",
+  measurementId: "G-CXP5QEC7YK"
+};
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'ppob-manager-pro-id';
-
-const APP_TITLE = "PPOB MANAGER PRO";
+const appId = 'intranksi-ppob';
+const APP_TITLE = "INTRANKSI APPS";
 
 // DEFAULT MASTER DATA
 const DEFAULT_CONFIG = {
