@@ -3,7 +3,7 @@ import {
   LayoutDashboard, PlusCircle, History, Calculator, Settings, 
   LogOut, Wallet, TrendingUp, AlertCircle, CheckCircle2, 
   Send, Trash2, Edit3, Loader2, Save, X, ChevronRight, 
-  CreditCard, Banknote, Plus, Lock, Mail, User, Building2
+  CreditCard, Banknote, Plus, Lock, Mail, User, Building2, Phone, Coins, Key
 } from 'lucide-react';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -17,7 +17,8 @@ import {
   onAuthStateChanged, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
-  signOut
+  signOut,
+  updatePassword
 } from 'firebase/auth';
 import { 
   getFirestore, doc, setDoc, onSnapshot, collection, 
@@ -48,7 +49,7 @@ const DEFAULT_CONFIG = {
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+  const [authMode, setAuthMode] = useState('login');
   const [authError, setAuthError] = useState(null);
   const [profile, setProfile] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -58,20 +59,16 @@ export default function App() {
   const [bankBalances, setBankBalances] = useState({});
   const [toast, setToast] = useState(null);
 
-  // AUTH FORM STATE
-  const [authForm, setAuthForm] = useState({
-    email: '',
-    password: '',
-    namaUsaha: ''
-  });
+  // NEW STATES FOR SETTINGS
+  const [passFormData, setPassFormData] = useState({ newPassword: '', confirmPassword: '' });
 
+  const [authForm, setAuthForm] = useState({ email: '', password: '', namaUsaha: '' });
   const [formData, setFormData] = useState({
     tanggal: new Date().toISOString().split('T')[0],
     jenisTransaksi: '', metodeBayar: '', akunBank: '', noRekTujuan: '',
     namaPelanggan: '', nominal: '', noWhatsapp: '', statusBayar: 'BELUM BAYAR'
   });
 
-  // FIREBASE AUTH & SYNC LOGIC
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -102,6 +99,11 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  };
+
   const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -110,11 +112,11 @@ export default function App() {
       if (authMode === 'register') {
         const userCredential = await createUserWithEmailAndPassword(auth, authForm.email, authForm.password);
         const user = userCredential.user;
-        
-        // CREATE INITIAL PROFILE
         await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'profile'), {
           namaUsaha: authForm.namaUsaha.toUpperCase(),
           email: authForm.email,
+          nomorTelepon: '',
+          modalUsaha: 0,
           config: DEFAULT_CONFIG,
           bankBalances: {},
           createdAt: new Date().toISOString()
@@ -123,81 +125,39 @@ export default function App() {
         await signInWithEmailAndPassword(auth, authForm.email, authForm.password);
       }
     } catch (err) {
-      let errorMsg = "TERJADI KESALAHAN";
-      if (err.code === 'auth/user-not-found') errorMsg = "EMAIL TIDAK TERDAFTAR";
-      if (err.code === 'auth/wrong-password') errorMsg = "PASSWORD SALAH";
-      if (err.code === 'auth/email-already-in-use') errorMsg = "EMAIL SUDAH TERDAFTAR";
-      setAuthError(errorMsg);
-    } finally {
-      setLoading(false);
+      setAuthError("KESALAHAN OTENTIKASI: " + err.code);
+    } finally { setLoading(false); }
+  };
+
+  const updateProfileField = async (field, value) => {
+    if (!user) return;
+    try {
+      const profileRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'profile');
+      await updateDoc(profileRef, { [field]: value });
+    } catch (e) {
+      console.error("GAGAL UPDATE PROFIL:", e);
     }
   };
 
-  const calculateFee = (nominal) => {
-    const n = parseFloat(nominal) || 0;
-    if (n < 100000) return 3000;
-    if (n < 300000) return 5000;
-    if (n < 1000000) return 7000;
-    return Math.floor(n * 0.01);
-  };
-
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  const saveTransaction = async (e) => {
+  const handleUpdatePassword = async (e) => {
     e.preventDefault();
-    if (!user) return;
-    const fee = calculateFee(formData.nominal);
-    const total = (parseFloat(formData.nominal) || 0) + fee;
-    const payload = { 
-      ...formData, 
-      nominal: parseFloat(formData.nominal), 
-      fee, 
-      totalTagihan: total, 
-      updatedAt: new Date().toISOString() 
-    };
-
+    if (passFormData.newPassword !== passFormData.confirmPassword) {
+      showToast("PASSWORD TIDAK COCOK!");
+      return;
+    }
     try {
-      if (editingTxId) {
-        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', editingTxId), payload);
-        setEditingTxId(null);
-        showToast("DATA BERHASIL DIPERBARUI");
-      } else {
-        payload.createdAt = new Date().toISOString();
-        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), payload);
-        showToast("DATA BERHASIL DISIMPAN");
-      }
-      setFormData({ 
-        tanggal: new Date().toISOString().split('T')[0], 
-        jenisTransaksi: '', metodeBayar: '', akunBank: '', noRekTujuan: '', 
-        namaPelanggan: '', nominal: '', noWhatsapp: '', statusBayar: 'BELUM BAYAR' 
-      });
-      setActiveTab('history');
-    } catch (err) { console.error(err); }
+      await updatePassword(auth.currentUser, passFormData.newPassword);
+      showToast("PASSWORD BERHASIL DIGANTI");
+      setPassFormData({ newPassword: '', confirmPassword: '' });
+    } catch (err) {
+      showToast("GAGAL: SILAKAN LOGIN ULANG UNTUK KEAMANAN");
+    }
   };
 
-  const updateConfig = async (key, newList) => {
-    if (!user) return;
+  const updateConfig = (key, newList) => {
     const newConfig = { ...config, [key]: newList };
     setConfig(newConfig);
-    await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'profile'), { config: newConfig });
-  };
-
-  const sendAgregatedWA = (targetTx) => {
-    const pendingItems = transactions.filter(t => 
-      t.noWhatsapp === targetTx.noWhatsapp && 
-      t.statusBayar === 'BELUM BAYAR'
-    );
-    let total = 0;
-    let detail = "";
-    pendingItems.forEach((item, index) => {
-      total += item.totalTagihan;
-      detail += `${index + 1}. *${item.jenisTransaksi}* - RP ${item.totalTagihan.toLocaleString()}%0A`;
-    });
-    const pesan = `*TAGIHAN ${profile?.namaUsaha || 'PPOB'}*%0A%0AHALO *${targetTx.namaPelanggan}*, BERIKUT RINCIAN TAGIHAN ANDA:%0A%0A${detail}%0A*TOTAL: RP ${total.toLocaleString()}*%0A%0AMOHON SEGERA DISELESAIKAN. TERIMA KASIH!`;
-    window.open(`https://wa.me/${targetTx.noWhatsapp}?text=${pesan}`, '_blank');
+    updateProfileField('config', newConfig);
   };
 
   const stats = useMemo(() => {
@@ -207,158 +167,103 @@ export default function App() {
     return { omset, profit, pending };
   }, [transactions]);
 
-  const grandTotalAsset = useMemo(() => {
-    const fisik = Object.values(bankBalances).reduce((a, b) => a + (parseFloat(b) || 0), 0);
-    return fisik + stats.pending;
-  }, [bankBalances, stats.pending]);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.jenisTransaksi || !formData.metodeBayar || !formData.nominal) return;
+    try {
+      const txData = {
+        ...formData,
+        nominal: parseFloat(formData.nominal),
+        fee: parseFloat(formData.fee || 0),
+        totalTagihan: parseFloat(formData.nominal) + parseFloat(formData.fee || 0),
+        timestamp: new Date().toISOString()
+      };
+      if (editingTxId) {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', editingTxId), txData);
+        setEditingTxId(null);
+        showToast("TRANSAKSI DIPERBARUI");
+      } else {
+        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), txData);
+        showToast("TRANSAKSI BERHASIL");
+      }
+      setFormData({
+        tanggal: new Date().toISOString().split('T')[0],
+        jenisTransaksi: '', metodeBayar: '', akunBank: '', noRekTujuan: '',
+        namaPelanggan: '', nominal: '', fee: '', noWhatsapp: '', statusBayar: 'BELUM BAYAR'
+      });
+      setActiveTab('history');
+    } catch (e) { showToast("GAGAL MENYIMPAN"); }
+  };
 
-  // LOADING STATE
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-4 text-blue-500 font-black italic tracking-widest uppercase">
-        <Loader2 className="animate-spin" size={40} /> 
-        MENGHUBUNGKAN KE CLOUD...
-      </div>
-    );
-  }
+  if (loading) return <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-blue-500 font-black italic uppercase tracking-widest"><Loader2 className="animate-spin mb-4" size={40} /> MENGHUBUNGKAN...</div>;
 
-  // LOGIN & REGISTER UI
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-4 font-black italic uppercase tracking-tighter">
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-4 font-black italic uppercase">
         <div className="w-full max-w-md bg-white p-10 rounded-[40px] shadow-2xl border-4 border-white">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl text-blue-600 mb-2">PPOB CLOUD</h1>
-            <p className="text-slate-400 text-[10px] tracking-widest">{authMode === 'login' ? 'MASUK KE DATABASE' : 'DAFTAR DATABASE BARU'}</p>
-          </div>
-          
-          {authError && (
-            <div className="bg-red-50 text-red-600 p-4 rounded-2xl mb-6 flex items-center gap-3 text-[10px]">
-              <AlertCircle size={16} /> {authError}
-            </div>
-          )}
-
+          <h1 className="text-3xl text-blue-600 mb-8 text-center tracking-tighter">PPOB CLOUD</h1>
+          {authError && <div className="bg-red-50 text-red-600 p-4 rounded-xl mb-4 text-[8px]">{authError}</div>}
           <form onSubmit={handleAuth} className="space-y-4">
             {authMode === 'register' && (
-              <div className="relative">
-                <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input 
-                  required
-                  placeholder="NAMA USAHA / TOKO" 
-                  className="w-full pl-12 p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-blue-500 outline-none transition-all"
-                  value={authForm.namaUsaha}
-                  onChange={e => setAuthForm({...authForm, namaUsaha: e.target.value.toUpperCase()})}
-                />
-              </div>
+              <input required placeholder="NAMA USAHA" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500" value={authForm.namaUsaha} onChange={e => setAuthForm({...authForm, namaUsaha: e.target.value.toUpperCase()})} />
             )}
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
-                required
-                type="email"
-                placeholder="ALAMAT EMAIL" 
-                className="w-full pl-12 p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-blue-500 outline-none transition-all"
-                value={authForm.email}
-                onChange={e => setAuthForm({...authForm, email: e.target.value})}
-              />
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
-                required
-                type="password"
-                placeholder="KATA SANDI" 
-                className="w-full pl-12 p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-blue-500 outline-none transition-all"
-                value={authForm.password}
-                onChange={e => setAuthForm({...authForm, password: e.target.value})}
-              />
-            </div>
-            
-            <button 
-              type="submit" 
-              className="w-full bg-blue-600 text-white py-5 rounded-[25px] shadow-lg shadow-blue-100 hover:scale-[1.02] active:scale-95 transition-all mt-4"
-            >
-              {authMode === 'login' ? 'MASUK SEKARANG' : 'BUAT AKUN CLOUD'}
-            </button>
+            <input required type="email" placeholder="EMAIL" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500" value={authForm.email} onChange={e => setAuthForm({...authForm, email: e.target.value})} />
+            <input required type="password" placeholder="PASSWORD" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500" value={authForm.password} onChange={e => setAuthForm({...authForm, password: e.target.value})} />
+            <button className="w-full bg-blue-600 text-white py-5 rounded-[25px] shadow-lg hover:bg-slate-900 transition-all">{authMode === 'login' ? 'MASUK' : 'DAFTAR'}</button>
           </form>
-
-          <div className="text-center mt-8">
-            <button 
-              onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError(null); }}
-              className="text-slate-400 text-[10px] hover:text-blue-600"
-            >
-              {authMode === 'login' ? 'BELUM PUNYA AKUN? DAFTAR DISINI' : 'SUDAH PUNYA AKUN? MASUK DISINI'}
-            </button>
-          </div>
+          <button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="w-full mt-6 text-slate-400 text-[10px]">{authMode === 'login' ? 'BUAT AKUN BARU' : 'SUDAH PUNYA AKUN'}</button>
         </div>
       </div>
     );
   }
 
-  // MAIN DASHBOARD UI (SAMA SEPERTI SEBELUMNYA)
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col md:flex-row font-black italic text-[10px] uppercase tracking-tighter">
-      {/* TOAST MESSAGE */}
-      {toast && (
-        <div className="fixed top-6 right-6 z-50 bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl border-l-8 border-blue-500 flex items-center gap-3 animate-bounce">
-          <CheckCircle2 className="text-blue-500" size={18} /> {toast}
-        </div>
-      )}
+      {toast && <div className="fixed top-6 right-6 z-50 bg-slate-900 text-white px-8 py-4 rounded-2xl border-l-8 border-blue-500 flex items-center gap-3 animate-bounce shadow-2xl"><CheckCircle2 size={18} /> {toast}</div>}
 
       {/* SIDEBAR */}
       <div className="w-full md:w-64 bg-white border-r-4 border-slate-100 flex flex-col shrink-0 h-screen sticky top-0">
         <div className="p-8 border-b-4 border-slate-50">
-          <h1 className="text-blue-600 text-[14px] leading-none mb-1">{profile?.namaUsaha || 'USAHA SAYA'}</h1>
-          <p className="text-slate-400 text-[8px] tracking-[0.2em]">{user.email}</p>
+          <h1 className="text-blue-600 text-[14px] leading-none mb-1 truncate">{profile?.namaUsaha || 'USER'}</h1>
+          <p className="text-slate-400 text-[8px] tracking-[0.2em] truncate">{user.email}</p>
         </div>
-        <nav className="flex-1 p-6 space-y-2 overflow-y-auto custom-scrollbar">
+        <nav className="flex-1 p-6 space-y-2 overflow-y-auto">
           {[
-            { id: 'dashboard', label: 'DASHBOARD', icon: LayoutDashboard },
-            { id: 'input', label: 'INPUT BARU', icon: PlusCircle },
-            { id: 'history', label: 'HISTORY DATA', icon: History },
-            { id: 'calculator', label: 'KALKULATOR ASET', icon: Calculator },
-            { id: 'settings', label: 'PENGATURAN', icon: Settings },
+            { id: 'dashboard', icon: LayoutDashboard },
+            { id: 'input', icon: PlusCircle },
+            { id: 'history', icon: History },
+            { id: 'calculator', icon: Calculator },
+            { id: 'settings', icon: Settings }
           ].map(item => (
-            <button key={item.id} onClick={() => { setActiveTab(item.id); setEditingTxId(null); }} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all ${activeTab === item.id ? 'bg-blue-600 text-white shadow-xl shadow-blue-100 scale-105' : 'text-slate-400 hover:bg-slate-50'}`}>
-              <item.icon size={16} />
-              <span>{item.label}</span>
+            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full text-left flex items-center gap-4 px-6 py-4 rounded-2xl transition-all ${activeTab === item.id ? 'bg-blue-600 text-white shadow-xl scale-105' : 'text-slate-400 hover:bg-slate-50'}`}>
+              <item.icon size={18} />
+              {item.id.toUpperCase()}
             </button>
           ))}
         </nav>
         <div className="p-6 border-t-2 border-slate-50">
-          <button onClick={() => signOut(auth)} className="w-full flex items-center gap-4 px-6 py-4 text-red-500 rounded-2xl hover:bg-red-50">
-            <LogOut size={16} />
-            <span>KELUAR AKUN</span>
-          </button>
+          <button onClick={() => signOut(auth)} className="w-full text-red-500 px-6 py-4 rounded-2xl hover:bg-red-50 text-left flex items-center gap-4"><LogOut size={18} /> KELUAR</button>
         </div>
       </div>
 
-      {/* MAIN CONTENT AREA */}
-      <div className="flex-1 p-4 md:p-10 overflow-y-auto">
+      {/* MAIN CONTENT */}
+      <div className="flex-1 p-4 md:p-10 overflow-y-auto custom-scrollbar">
+        
         {activeTab === 'dashboard' && (
           <div className="space-y-8 max-w-5xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div className="bg-white p-8 rounded-[40px] border-4 border-white shadow-xl">
-                <p className="text-slate-400 mb-2">TOTAL OMSET</p>
-                <h2 className="text-2xl text-slate-900">RP {stats.omset.toLocaleString()}</h2>
-              </div>
-              <div className="bg-white p-8 rounded-[40px] border-4 border-white shadow-xl">
-                <p className="text-green-600 mb-2">PROFIT BERSIH</p>
-                <h2 className="text-2xl text-green-600">RP {stats.profit.toLocaleString()}</h2>
-              </div>
-              <div className="bg-white p-8 rounded-[40px] border-4 border-white shadow-xl">
-                <p className="text-orange-600 mb-2">PIUTANG PELANGGAN</p>
-                <h2 className="text-2xl text-orange-600">RP {stats.pending.toLocaleString()}</h2>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="bg-white p-6 rounded-[30px] shadow-lg border-4 border-white"><p className="text-slate-400 mb-1">OMSET</p><h2 className="text-lg">RP {stats.omset.toLocaleString()}</h2></div>
+              <div className="bg-white p-6 rounded-[30px] shadow-lg border-4 border-white"><p className="text-green-600 mb-1">PROFIT</p><h2 className="text-lg">RP {stats.profit.toLocaleString()}</h2></div>
+              <div className="bg-white p-6 rounded-[30px] shadow-lg border-4 border-white"><p className="text-orange-600 mb-1">PIUTANG</p><h2 className="text-lg">RP {stats.pending.toLocaleString()}</h2></div>
+              <div className="bg-blue-600 p-6 rounded-[30px] shadow-lg border-4 border-blue-500 text-white"><p className="text-blue-200 mb-1">MODAL</p><h2 className="text-lg">RP {profile?.modalUsaha?.toLocaleString() || 0}</h2></div>
             </div>
-            <div className="bg-white p-10 rounded-[40px] border-4 border-white shadow-xl h-80">
+
+            <div className="bg-white p-8 rounded-[40px] shadow-xl border-4 border-white h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={transactions.slice(0, 10).reverse()}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="tanggal" hide />
-                  <YAxis hide />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="totalTagihan" stroke="#2563eb" fill="#2563eb33" strokeWidth={4} />
+                <AreaChart data={transactions.slice().reverse()}>
+                  <defs><linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/><stop offset="95%" stopColor="#2563eb" stopOpacity={0}/></linearGradient></defs>
+                  <Tooltip contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontStyle: 'italic', fontWeight: '900', fontSize: '10px' }} />
+                  <Area type="monotone" dataKey="profit" stroke="#2563eb" strokeWidth={4} fillOpacity={1} fill="url(#colorProfit)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -366,131 +271,166 @@ export default function App() {
         )}
 
         {activeTab === 'input' && (
-          <div className="max-w-2xl mx-auto bg-white p-10 rounded-[40px] border-4 border-white shadow-2xl">
-            <h2 className="text-xl mb-8 border-b-2 border-slate-50 pb-4 text-blue-600">{editingTxId ? 'EDIT DATA TRANSAKSI' : 'INPUT TRANSAKSI BARU'}</h2>
-            <form onSubmit={saveTransaction} className="space-y-4">
+          <div className="max-w-2xl mx-auto bg-white p-10 rounded-[40px] shadow-xl border-4 border-white">
+            <h2 className="text-xl mb-8 flex items-center gap-4"><PlusCircle className="text-blue-600" /> {editingTxId ? 'EDIT TRANSAKSI' : 'TRANSAKSI BARU'}</h2>
+            <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
-                <input type="date" value={formData.tanggal} onChange={e => setFormData({...formData, tanggal: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500" />
-                <select required value={formData.jenisTransaksi} onChange={e => setFormData({...formData, jenisTransaksi: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500">
-                  <option value="">PILIH LAYANAN</option>
-                  {config.jenisTransaksi.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <input placeholder="NAMA PELANGGAN" required value={formData.namaPelanggan} onChange={e => setFormData({...formData, namaPelanggan: e.target.value.toUpperCase()})} className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500" />
-              <div className="grid grid-cols-2 gap-4">
-                <input type="number" placeholder="NOMINAL" required value={formData.nominal} onChange={e => setFormData({...formData, nominal: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500" />
-                <input placeholder="NOMOR WHATSAPP" required value={formData.noWhatsapp} onChange={e => setFormData({...formData, noWhatsapp: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500" />
+                <div className="space-y-2"><label className="text-slate-400 ml-2">TANGGAL</label><input type="date" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500" value={formData.tanggal} onChange={e => setFormData({...formData, tanggal: e.target.value})} /></div>
+                <div className="space-y-2"><label className="text-slate-400 ml-2">PELANGGAN</label><input placeholder="NAMA" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500" value={formData.namaPelanggan} onChange={e => setFormData({...formData, namaPelanggan: e.target.value.toUpperCase()})} /></div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <select value={formData.metodeBayar} onChange={e => setFormData({...formData, metodeBayar: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500">
-                  <option value="">METODE BAYAR</option>
-                  {config.metodeBayar.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-                <select value={formData.akunBank} onChange={e => setFormData({...formData, akunBank: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500">
-                  <option value="">AKUN TUJUAN</option>
-                  {config.akunBank.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+                <div className="space-y-2"><label className="text-slate-400 ml-2">JENIS</label><select className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 appearance-none" value={formData.jenisTransaksi} onChange={e => setFormData({...formData, jenisTransaksi: e.target.value})}>
+                  <option value="">PILIH</option>{config.jenisTransaksi.map(j => <option key={j} value={j}>{j}</option>)}
+                </select></div>
+                <div className="space-y-2"><label className="text-slate-400 ml-2">BANK/E-WALLET</label><select className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 appearance-none" value={formData.akunBank} onChange={e => setFormData({...formData, akunBank: e.target.value})}>
+                  <option value="">PILIH</option>{config.akunBank.map(b => <option key={b} value={b}>{b}</option>)}
+                </select></div>
               </div>
-              <select value={formData.statusBayar} onChange={e => setFormData({...formData, statusBayar: e.target.value})} className={`w-full p-4 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500 ${formData.statusBayar === 'SUDAH BAYAR' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-                {config.statusBayar.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <button type="submit" className="w-full bg-blue-600 text-white py-5 rounded-[25px] shadow-lg shadow-blue-200 mt-4 active:scale-95 transition-all">SIMPAN KE CLOUD DATABASE</button>
+              <div className="space-y-2"><label className="text-slate-400 ml-2">NOMOR TUJUAN</label><input placeholder="REK / ID PELANGGAN / NO HP" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500" value={formData.noRekTujuan} onChange={e => setFormData({...formData, noRekTujuan: e.target.value})} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><label className="text-slate-400 ml-2">NOMINAL</label><input type="number" placeholder="RP" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" value={formData.nominal} onChange={e => setFormData({...formData, nominal: e.target.value})} /></div>
+                <div className="space-y-2"><label className="text-slate-400 ml-2">FEE / ADMIN</label><input type="number" placeholder="RP" className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-bold" value={formData.fee} onChange={e => setFormData({...formData, fee: e.target.value})} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><label className="text-slate-400 ml-2">METODE</label><select className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 appearance-none" value={formData.metodeBayar} onChange={e => setFormData({...formData, metodeBayar: e.target.value})}>
+                  <option value="">PILIH</option>{config.metodeBayar.map(m => <option key={m} value={m}>{m}</option>)}
+                </select></div>
+                <div className="space-y-2"><label className="text-slate-400 ml-2">STATUS</label><select className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 appearance-none" value={formData.statusBayar} onChange={e => setFormData({...formData, statusBayar: e.target.value})}>
+                  {config.statusBayar.map(s => <option key={s} value={s}>{s}</option>)}
+                </select></div>
+              </div>
+              <div className="flex gap-4 pt-4">
+                <button type="submit" className="flex-1 bg-blue-600 text-white py-5 rounded-[25px] shadow-lg hover:bg-slate-900 transition-all flex items-center justify-center gap-3"><Save size={20}/> SIMPAN TRANSAKSI</button>
+                {editingTxId && <button type="button" onClick={() => {setEditingTxId(null); setFormData({tanggal: new Date().toISOString().split('T')[0], statusBayar: 'BELUM BAYAR'});}} className="px-8 bg-slate-100 text-slate-400 rounded-[25px] hover:bg-slate-200 transition-all"><X size={20}/></button>}
+              </div>
             </form>
           </div>
         )}
 
         {activeTab === 'history' && (
-          <div className="bg-white rounded-[40px] border-4 border-white shadow-xl overflow-hidden">
-            <div className="p-8 border-b-2 border-slate-50 flex justify-between items-center">
-              <h2 className="text-xl">RIWAYAT DATA TERBARU</h2>
+          <div className="space-y-6 max-w-6xl mx-auto">
+            <div className="flex justify-between items-center bg-white p-6 rounded-[30px] shadow-sm">
+              <h2 className="text-lg flex items-center gap-4"><History className="text-blue-600" /> RIWAYAT TRANSAKSI</h2>
+              <div className="flex gap-4">
+                <div className="bg-slate-50 px-6 py-2 rounded-2xl border-2 border-slate-100"><p className="text-[8px] text-slate-400">TOTAL</p><p>{transactions.length} ITEM</p></div>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 text-slate-400">
-                  <tr>
-                    <th className="p-6">PELANGGAN</th>
-                    <th className="p-6">LAYANAN</th>
-                    <th className="p-6">TOTAL</th>
-                    <th className="p-6">STATUS</th>
-                    <th className="p-6 text-center">AKSI</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y-2 divide-slate-50">
-                  {transactions.map(tx => (
-                    <tr key={tx.id} className="hover:bg-slate-50/50 group transition-all">
-                      <td className="p-6">
-                        <div className="font-black">{tx.namaPelanggan}</div>
-                        <div className="text-[7px] text-slate-300">{tx.tanggal}</div>
-                      </td>
-                      <td className="p-6 text-slate-500">{tx.jenisTransaksi}</td>
-                      <td className="p-6 text-blue-600">RP {tx.totalTagihan?.toLocaleString()}</td>
-                      <td className="p-6">
-                        <span className={`px-4 py-1 rounded-full text-[8px] ${tx.statusBayar === 'SUDAH BAYAR' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>{tx.statusBayar}</span>
-                      </td>
-                      <td className="p-6 flex justify-center gap-2">
-                        <button onClick={() => sendAgregatedWA(tx)} className="p-2 bg-green-500 text-white rounded-lg hover:scale-110"><Send size={12}/></button>
-                        <button onClick={() => { setFormData(tx); setEditingTxId(tx.id); setActiveTab('input'); }} className="p-2 bg-blue-500 text-white rounded-lg hover:scale-110"><Edit3 size={12}/></button>
-                        <button onClick={async () => { if(confirm('HAPUS DATA?')) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id)); }} className="p-2 text-red-200 hover:text-red-500"><Trash2 size={12}/></button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'calculator' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            <div className="bg-white p-10 rounded-[40px] border-4 border-white shadow-xl space-y-4">
-              <h2 className="text-xl mb-6 text-blue-600 flex items-center gap-2"><CreditCard/> SALDO FISIK & BANK</h2>
-              {config.akunBank.map(bank => (
-                <div key={bank} className="flex flex-col gap-1">
-                  <span className="ml-4 text-[7px] text-slate-400">{bank}</span>
-                  <input type="number" value={bankBalances[bank] || ''} onChange={async (e) => {
-                    const newBalances = {...bankBalances, [bank]: e.target.value};
-                    setBankBalances(newBalances);
-                    await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'profile'), { bankBalances: newBalances });
-                  }} className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500" placeholder="0" />
+            <div className="grid grid-cols-1 gap-4">
+              {transactions.map(tx => (
+                <div key={tx.id} className="bg-white p-6 rounded-[35px] shadow-md border-4 border-white hover:border-blue-100 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group">
+                  <div className="flex items-center gap-6">
+                    <div className={`p-4 rounded-3xl ${tx.statusBayar === 'SUDAH BAYAR' ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600'}`}>
+                      {tx.metodeBayar === 'TUNAI' ? <Banknote size={24}/> : <CreditCard size={24}/>}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-3 mb-1">
+                        <h3 className="text-sm">{tx.namaPelanggan || 'NONAME'}</h3>
+                        <span className="text-[8px] px-3 py-1 bg-slate-100 rounded-full">{tx.tanggal}</span>
+                      </div>
+                      <p className="text-slate-400 text-[8px] tracking-widest">{tx.jenisTransaksi} • {tx.akunBank} • {tx.noRekTujuan}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-8 w-full md:w-auto justify-between md:justify-end">
+                    <div className="text-right">
+                      <p className="text-slate-400 text-[8px]">TOTAL TAGIHAN</p>
+                      <h4 className="text-sm">RP {tx.totalTagihan?.toLocaleString()}</h4>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => {setFormData(tx); setEditingTxId(tx.id); setActiveTab('input');}} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-blue-50 hover:text-blue-600 transition-all"><Edit3 size={16}/></button>
+                      <button onClick={async () => {if(confirm('HAPUS DATA?')) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id));}} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-600 transition-all"><Trash2 size={16}/></button>
+                    </div>
+                  </div>
                 </div>
               ))}
-            </div>
-            <div className="bg-slate-900 p-10 rounded-[40px] text-white flex flex-col justify-center items-center text-center space-y-6">
-              <div className="space-y-2">
-                <p className="text-slate-500 text-[8px] tracking-[0.5em]">TOTAL SALDO + PIUTANG</p>
-                <h3 className="text-4xl italic">RP {grandTotalAsset.toLocaleString()}</h3>
-              </div>
-              <div className="w-full h-1 bg-slate-800 rounded-full"></div>
-              <div className="grid grid-cols-2 gap-4 w-full">
-                <div className="p-4 bg-slate-800 rounded-2xl">
-                  <p className="text-[7px] text-slate-500 mb-1">TOTAL CASH/BANK</p>
-                  <p className="text-xs">RP {Object.values(bankBalances).reduce((a, b) => a + (parseFloat(b) || 0), 0).toLocaleString()}</p>
-                </div>
-                <div className="p-4 bg-slate-800 rounded-2xl">
-                  <p className="text-[7px] text-slate-500 mb-1">TOTAL PIUTANG</p>
-                  <p className="text-xs text-orange-500">RP {stats.pending.toLocaleString()}</p>
-                </div>
-              </div>
             </div>
           </div>
         )}
 
         {activeTab === 'settings' && (
-          <div className="max-w-6xl mx-auto space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="max-w-4xl mx-auto space-y-10">
+            {/* 1. PROFIL USAHA & MODAL */}
+            <div className="bg-white p-10 rounded-[40px] shadow-xl border-4 border-white">
+              <div className="flex items-center gap-4 mb-8 border-b-2 border-slate-50 pb-4">
+                <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl"><Building2 size={24} /></div>
+                <h2 className="text-xl">PROFIL USAHA & MODAL</h2>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-2">
+                  <label className="text-slate-400 ml-2">NAMA USAHA</label>
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input className="w-full pl-12 p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-black" value={profile?.namaUsaha || ''} onChange={e => updateProfileField('namaUsaha', e.target.value.toUpperCase())} />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-slate-400 ml-2">NOMOR TELEPON USAHA</label>
+                  <div className="relative">
+                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input className="w-full pl-12 p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 font-black" placeholder="08..." value={profile?.nomorTelepon || ''} onChange={e => updateProfileField('nomorTelepon', e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-slate-400 ml-2">ALAMAT EMAIL (TIDAK DAPAT DIUBAH)</label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-200" size={18} />
+                    <input disabled className="w-full pl-12 p-4 bg-slate-100 text-slate-400 rounded-2xl border-2 border-transparent font-black cursor-not-allowed" value={profile?.email || ''} />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-blue-600 font-black ml-2">INPUT MODAL USAHA (RP)</label>
+                  <div className="relative">
+                    <Coins className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500" size={18} />
+                    <input type="number" className="w-full pl-12 p-4 bg-blue-50 text-blue-600 rounded-2xl outline-none border-2 border-blue-100 focus:border-blue-500 font-black text-lg" placeholder="0" value={profile?.modalUsaha || ''} onChange={e => updateProfileField('modalUsaha', parseFloat(e.target.value) || 0)} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. KEAMANAN AKUN (GANTI SANDI) */}
+            <div className="bg-white p-10 rounded-[40px] shadow-xl border-4 border-white">
+              <div className="flex items-center gap-4 mb-8 border-b-2 border-slate-50 pb-4">
+                <div className="p-3 bg-red-50 text-red-600 rounded-2xl"><Lock size={24} /></div>
+                <h2 className="text-xl">KEAMANAN AKUN</h2>
+              </div>
+              
+              <form onSubmit={handleUpdatePassword} className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
+                <div className="space-y-2">
+                  <label className="text-slate-400 ml-2">KATA SANDI BARU</label>
+                  <div className="relative">
+                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input required type="password" placeholder="MIN. 6 KARAKTER" className="w-full pl-12 p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-red-500 font-black" value={passFormData.newPassword} onChange={e => setPassFormData({...passFormData, newPassword: e.target.value})} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-slate-400 ml-2">KONFIRMASI SANDI BARU</label>
+                  <div className="relative">
+                    <CheckCircle2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input required type="password" placeholder="ULANGI SANDI" className="w-full pl-12 p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-red-500 font-black" value={passFormData.confirmPassword} onChange={e => setPassFormData({...passFormData, confirmPassword: e.target.value})} />
+                  </div>
+                </div>
+                <button type="submit" className="md:col-span-2 w-full bg-slate-900 text-white py-5 rounded-[25px] shadow-lg hover:bg-red-600 transition-all font-black flex items-center justify-center gap-3"><Save size={20}/> PERBARUI KATA SANDI</button>
+              </form>
+            </div>
+
+            {/* 3. KONFIGURASI LIST (FITUR LAMA YANG TETAP DIJAGA) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {Object.keys(DEFAULT_CONFIG).map(key => (
-                <div key={key} className="bg-white p-8 rounded-[40px] border-4 border-white shadow-xl flex flex-col h-80">
-                  <h3 className="mb-4 text-blue-600 border-b-2 border-slate-50 pb-2">{key.toUpperCase()}</h3>
+                <div key={key} className="bg-white p-8 rounded-[35px] border-4 border-white shadow-lg flex flex-col h-72">
+                  <h3 className="mb-4 text-blue-600 border-b-2 border-slate-50 pb-2 text-[8px] tracking-widest">{key.toUpperCase()}</h3>
                   <div className="flex-1 overflow-y-auto space-y-2 mb-4 custom-scrollbar">
-                    {config[key].map((item, idx) => (
+                    {config[key]?.map((item, idx) => (
                       <div key={idx} className="bg-slate-50 px-4 py-2 rounded-xl flex justify-between items-center group">
                         <span className="text-slate-700">{item}</span>
-                        <button onClick={() => updateConfig(key, config[key].filter((_, i) => i !== idx))} className="text-red-200 opacity-0 group-hover:opacity-100"><X size={12}/></button>
+                        <button onClick={() => updateConfig(key, config[key].filter((_, i) => i !== idx))} className="text-red-200 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all"><X size={12}/></button>
                       </div>
                     ))}
                   </div>
                   <form onSubmit={(e) => { e.preventDefault(); const val = e.target.newItem.value.toUpperCase(); if(val) { updateConfig(key, [...config[key], val]); e.target.reset(); }}} className="flex gap-2">
-                    <input name="newItem" className="flex-1 p-3 bg-slate-50 border-2 border-transparent rounded-xl focus:border-blue-500 outline-none" placeholder="+" />
+                    <input name="newItem" className="flex-1 p-3 bg-slate-50 border-2 border-transparent rounded-xl focus:border-blue-500 outline-none" placeholder="TAMBAH..." />
                     <button className="bg-blue-600 text-white px-4 rounded-xl hover:scale-105 active:scale-90 transition-all"><Plus size={16}/></button>
                   </form>
                 </div>
@@ -502,7 +442,6 @@ export default function App() {
 
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 20px; }
       `}</style>
     </div>
