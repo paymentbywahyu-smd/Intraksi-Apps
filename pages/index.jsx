@@ -159,23 +159,45 @@ export default function App() {
     return n * 0.01;
   };
 
-  CONST HANDLEREGISTER = ASYNC (E) => {
-    E.PREVENTDEFAULT();
-    IF (!USER) RETURN;
-  
-    CONST FORMDATA = NEW FORMDATA(E.TARGET); // GUNAKAN INI
-    CONST NEWPROFILE = {
-      NAMAUSAHA: FORMDATA.GET('NAMAUSAHA').TOUPPERCASE(),
-      PEMILIK: FORMDATA.GET('NAMAPEMILIK').TOUPPERCASE(),
-      MODALAWAL: PARSEFLOAT(FORMDATA.GET('MODALAWAL')) || 0,
-      WHATSAPP: FORMDATA.GET('WHATSAPP'),
-      EMAIL: FORMDATA.GET('EMAIL'),
-      CONFIG: DEFAULT_CONFIG,
-      CREATEDAT: NEW DATE().ISOSTRING()
-    };
-    // ... LANJUTKAN PROSES SIMPAN
-  };
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
 
+    try {
+      // 1. DAFTAR AUTH SECARA ANONIM ATAU SESUAI LOGIKA ANDA
+      const userCredential = await signInAnonymously(auth);
+      const newUser = userCredential.user;
+
+      // 2. AMBIL DATA DARI FORM MENGGUNAKAN FORMDATA (LEBIH AMAN)
+      const formData = new FormData(e.target);
+      
+      const newProfile = {
+        namaPemilik: formData.get('namaPemilik')?.toUpperCase() || '',
+        namaUsaha: formData.get('namaUsaha')?.toUpperCase() || '',
+        whatsapp: formData.get('whatsapp') || '',
+        modalAwal: parseFloat(formData.get('modalAwal')) || 0,
+        email: formData.get('email') || '',
+        config: DEFAULT_CONFIG,
+        createdAt: new Date().toISOString(),
+        userId: newUser.uid
+      };
+
+      // 3. SIMPAN KE FIRESTORE
+      // PASTIKAN STRUKTUR PATH: artifacts > intranksi-ppob > users > [UID]
+      await setDoc(doc(db, 'artifacts', appId, 'users', newUser.uid), newProfile);
+
+      setProfile(newProfile);
+      setUser(newUser);
+      setActiveTab('dashboard');
+    } catch (err) {
+      console.error("REGISTRATION ERROR:", err);
+      setError("GAGAL MENYIMPAN DATA: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
   const saveTransaction = async (e) => {
     e.preventDefault();
     if (!user) return;
