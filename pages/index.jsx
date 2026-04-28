@@ -36,34 +36,32 @@ import {
   Area
 } from 'recharts';
 
-// FIREBASE IMPORTS
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  signInAnonymously, 
-  signInWithCustomToken, 
-  onAuthStateChanged,
-  updatePassword // UNTUK FITUR GANTI SANDI JIKA DIPERLUKAN DI MASA DEPAN
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  signOut
 } from 'firebase/auth';
 import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  setDoc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  onSnapshot
+  getFirestore, doc, setDoc, onSnapshot, collection, 
+  addDoc, updateDoc, deleteDoc 
 } from 'firebase/firestore';
 
-// INITIALIZE FIREBASE FROM ENVIRONMENT
-const firebaseConfig = JSON.parse(__firebase_config);
+const firebaseConfig = {
+  apiKey: "AIzaSyAC2R3MExfYGVyeX_r81gw6eeowC4Cvn9M",
+  authDomain: "intraksi-apps.firebaseapp.com",
+  projectId: "intraksi-apps",
+  storageBucket: "intraksi-apps.firebasestorage.app",
+  messagingSenderId: "741631853497",
+  appId: "1:741631853497:web:288406289b0bcede096c68"
+};
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'ppob-manager-pro-id';
-
-const APP_TITLE = "PPOB MANAGER PRO";
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'intraksi-ppob-v1';
 
 // DEFAULT MASTER DATA
 const DEFAULT_CONFIG = {
