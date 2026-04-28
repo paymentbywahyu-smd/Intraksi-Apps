@@ -159,32 +159,21 @@ export default function App() {
     return n * 0.01;
   };
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    if (!user) return;
-
-    // AMBIL DATA DARI FORM DENGAN CARA YANG LEBIH AMAN
-    const target = e.target;
-    const newProfile = {
-      namaUsaha: target[1].value.toUpperCase(), // INPUT KEDUA (NAMA USAHA)
-      pemilik: target[0].value.toUpperCase(),   // INPUT PERTAMA (NAMA PEMILIK)
-      modalAwal: parseFloat(target[3].value) || 0,
-      whatsapp: target[2].value,
-      email: target[4].value,
-      config: DEFAULT_CONFIG,
-      createdAt: new Date().toISOString()
+  CONST HANDLEREGISTER = ASYNC (E) => {
+    E.PREVENTDEFAULT();
+    IF (!USER) RETURN;
+  
+    CONST FORMDATA = NEW FORMDATA(E.TARGET); // GUNAKAN INI
+    CONST NEWPROFILE = {
+      NAMAUSAHA: FORMDATA.GET('NAMAUSAHA').TOUPPERCASE(),
+      PEMILIK: FORMDATA.GET('NAMAPEMILIK').TOUPPERCASE(),
+      MODALAWAL: PARSEFLOAT(FORMDATA.GET('MODALAWAL')) || 0,
+      WHATSAPP: FORMDATA.GET('WHATSAPP'),
+      EMAIL: FORMDATA.GET('EMAIL'),
+      CONFIG: DEFAULT_CONFIG,
+      CREATEDAT: NEW DATE().ISOSTRING()
     };
-
-    try {
-      console.log("MENCOBA MENYIMPAN PROFIL...");
-      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'settings'), newProfile);
-      console.log("PROFIL BERHASIL DISIMPAN!");
-      // REFRESH HALAMAN AGAR STATE PROFILE TER-UPDATE
-      window.location.reload(); 
-    } catch (error) {
-      console.error("REGISTRATION ERROR:", error);
-      alert("GAGAL MENYIMPAN KE DATABASE: " + error.message);
-    }
+    // ... LANJUTKAN PROSES SIMPAN
   };
 
   const saveTransaction = async (e) => {
