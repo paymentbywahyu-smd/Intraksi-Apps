@@ -3,7 +3,7 @@ import {
   LayoutDashboard, PlusCircle, History, Calculator, Settings, 
   LogOut, Wallet, TrendingUp, AlertCircle, CheckCircle2, 
   Send, Trash2, Edit3, Loader2, Save, X, ChevronRight, 
-  CreditCard, Banknote, Plus 
+  CreditCard, Banknote, Plus, Lock, Mail, User, Building2
 } from 'lucide-react';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -12,10 +12,18 @@ import {
 
 // FIREBASE IMPORTS
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { 
+  getAuth, 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  signOut
+} from 'firebase/auth';
+import { 
+  getFirestore, doc, setDoc, onSnapshot, collection, 
+  addDoc, updateDoc, deleteDoc 
+} from 'firebase/firestore';
 
-// CONFIGURATION FIREBASE INTRAKSI-APPS
 const firebaseConfig = {
   apiKey: "AIzaSyAC2R3MExfYGVyeX_r81gw6eeowC4Cvn9M",
   authDomain: "intraksi-apps.firebaseapp.com",
@@ -40,6 +48,8 @@ const DEFAULT_CONFIG = {
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+  const [authError, setAuthError] = useState(null);
   const [profile, setProfile] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [transactions, setTransactions] = useState([]);
@@ -47,6 +57,13 @@ export default function App() {
   const [editingTxId, setEditingTxId] = useState(null);
   const [bankBalances, setBankBalances] = useState({});
   const [toast, setToast] = useState(null);
+
+  // AUTH FORM STATE
+  const [authForm, setAuthForm] = useState({
+    email: '',
+    password: '',
+    namaUsaha: ''
+  });
 
   const [formData, setFormData] = useState({
     tanggal: new Date().toISOString().split('T')[0],
@@ -56,49 +73,65 @@ export default function App() {
 
   // FIREBASE AUTH & SYNC LOGIC
   useEffect(() => {
-    const handleAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (e) { console.error("AUTH ERROR", e); }
-    };
-    handleAuth();
-
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        // SYNC PROFILE DATA
         const profileRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'settings', 'profile');
-        onSnapshot(profileRef, (docSnap) => {
+        const unsubProfile = onSnapshot(profileRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
             setProfile(data);
             if (data.config) setConfig(data.config);
             if (data.bankBalances) setBankBalances(data.bankBalances);
-          } else {
-            const initialData = { namaUsaha: 'USAHA BARU', config: DEFAULT_CONFIG, bankBalances: {}, modalAwal: 0 };
-            setDoc(profileRef, initialData);
-            setProfile(initialData);
           }
           setLoading(false);
         });
 
-        // SYNC TRANSACTIONS
         const txRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'transactions');
-        onSnapshot(txRef, (snap) => {
+        const unsubTx = onSnapshot(txRef, (snap) => {
           const txData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
           txData.sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
           setTransactions(txData);
         });
+
+        return () => { unsubProfile(); unsubTx(); };
       } else {
         setLoading(false);
       }
     });
     return () => unsubscribe();
   }, []);
+
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setAuthError(null);
+    try {
+      if (authMode === 'register') {
+        const userCredential = await createUserWithEmailAndPassword(auth, authForm.email, authForm.password);
+        const user = userCredential.user;
+        
+        // CREATE INITIAL PROFILE
+        await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'profile'), {
+          namaUsaha: authForm.namaUsaha.toUpperCase(),
+          email: authForm.email,
+          config: DEFAULT_CONFIG,
+          bankBalances: {},
+          createdAt: new Date().toISOString()
+        });
+      } else {
+        await signInWithEmailAndPassword(auth, authForm.email, authForm.password);
+      }
+    } catch (err) {
+      let errorMsg = "TERJADI KESALAHAN";
+      if (err.code === 'auth/user-not-found') errorMsg = "EMAIL TIDAK TERDAFTAR";
+      if (err.code === 'auth/wrong-password') errorMsg = "PASSWORD SALAH";
+      if (err.code === 'auth/email-already-in-use') errorMsg = "EMAIL SUDAH TERDAFTAR";
+      setAuthError(errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const calculateFee = (nominal) => {
     const n = parseFloat(nominal) || 0;
@@ -179,8 +212,90 @@ export default function App() {
     return fisik + stats.pending;
   }, [bankBalances, stats.pending]);
 
-  if (loading) return <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-4 text-blue-500 font-black italic tracking-widest"><Loader2 className="animate-spin" size={40} /> MENGHUBUNGKAN KE SERVER...</div>;
+  // LOADING STATE
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-4 text-blue-500 font-black italic tracking-widest uppercase">
+        <Loader2 className="animate-spin" size={40} /> 
+        MENGHUBUNGKAN KE CLOUD...
+      </div>
+    );
+  }
 
+  // LOGIN & REGISTER UI
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-4 font-black italic uppercase tracking-tighter">
+        <div className="w-full max-w-md bg-white p-10 rounded-[40px] shadow-2xl border-4 border-white">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl text-blue-600 mb-2">PPOB CLOUD</h1>
+            <p className="text-slate-400 text-[10px] tracking-widest">{authMode === 'login' ? 'MASUK KE DATABASE' : 'DAFTAR DATABASE BARU'}</p>
+          </div>
+          
+          {authError && (
+            <div className="bg-red-50 text-red-600 p-4 rounded-2xl mb-6 flex items-center gap-3 text-[10px]">
+              <AlertCircle size={16} /> {authError}
+            </div>
+          )}
+
+          <form onSubmit={handleAuth} className="space-y-4">
+            {authMode === 'register' && (
+              <div className="relative">
+                <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                  required
+                  placeholder="NAMA USAHA / TOKO" 
+                  className="w-full pl-12 p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-blue-500 outline-none transition-all"
+                  value={authForm.namaUsaha}
+                  onChange={e => setAuthForm({...authForm, namaUsaha: e.target.value.toUpperCase()})}
+                />
+              </div>
+            )}
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input 
+                required
+                type="email"
+                placeholder="ALAMAT EMAIL" 
+                className="w-full pl-12 p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-blue-500 outline-none transition-all"
+                value={authForm.email}
+                onChange={e => setAuthForm({...authForm, email: e.target.value})}
+              />
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input 
+                required
+                type="password"
+                placeholder="KATA SANDI" 
+                className="w-full pl-12 p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-blue-500 outline-none transition-all"
+                value={authForm.password}
+                onChange={e => setAuthForm({...authForm, password: e.target.value})}
+              />
+            </div>
+            
+            <button 
+              type="submit" 
+              className="w-full bg-blue-600 text-white py-5 rounded-[25px] shadow-lg shadow-blue-100 hover:scale-[1.02] active:scale-95 transition-all mt-4"
+            >
+              {authMode === 'login' ? 'MASUK SEKARANG' : 'BUAT AKUN CLOUD'}
+            </button>
+          </form>
+
+          <div className="text-center mt-8">
+            <button 
+              onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError(null); }}
+              className="text-slate-400 text-[10px] hover:text-blue-600"
+            >
+              {authMode === 'login' ? 'BELUM PUNYA AKUN? DAFTAR DISINI' : 'SUDAH PUNYA AKUN? MASUK DISINI'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // MAIN DASHBOARD UI (SAMA SEPERTI SEBELUMNYA)
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col md:flex-row font-black italic text-[10px] uppercase tracking-tighter">
       {/* TOAST MESSAGE */}
@@ -194,7 +309,7 @@ export default function App() {
       <div className="w-full md:w-64 bg-white border-r-4 border-slate-100 flex flex-col shrink-0 h-screen sticky top-0">
         <div className="p-8 border-b-4 border-slate-50">
           <h1 className="text-blue-600 text-[14px] leading-none mb-1">{profile?.namaUsaha || 'USAHA SAYA'}</h1>
-          <p className="text-slate-400 text-[8px] tracking-[0.2em]">CLOUD DATABASE V1</p>
+          <p className="text-slate-400 text-[8px] tracking-[0.2em]">{user.email}</p>
         </div>
         <nav className="flex-1 p-6 space-y-2 overflow-y-auto custom-scrollbar">
           {[
@@ -211,14 +326,14 @@ export default function App() {
           ))}
         </nav>
         <div className="p-6 border-t-2 border-slate-50">
-          <button onClick={() => auth.signOut().then(() => window.location.reload())} className="w-full flex items-center gap-4 px-6 py-4 text-red-500 rounded-2xl hover:bg-red-50">
+          <button onClick={() => signOut(auth)} className="w-full flex items-center gap-4 px-6 py-4 text-red-500 rounded-2xl hover:bg-red-50">
             <LogOut size={16} />
             <span>KELUAR AKUN</span>
           </button>
         </div>
       </div>
 
-      {/* MAIN CONTENT */}
+      {/* MAIN CONTENT AREA */}
       <div className="flex-1 p-4 md:p-10 overflow-y-auto">
         {activeTab === 'dashboard' && (
           <div className="space-y-8 max-w-5xl mx-auto">
@@ -256,7 +371,7 @@ export default function App() {
             <form onSubmit={saveTransaction} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <input type="date" value={formData.tanggal} onChange={e => setFormData({...formData, tanggal: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500" />
-                <select value={formData.jenisTransaksi} onChange={e => setFormData({...formData, jenisTransaksi: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500">
+                <select required value={formData.jenisTransaksi} onChange={e => setFormData({...formData, jenisTransaksi: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500">
                   <option value="">PILIH LAYANAN</option>
                   {config.jenisTransaksi.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
@@ -264,7 +379,7 @@ export default function App() {
               <input placeholder="NAMA PELANGGAN" required value={formData.namaPelanggan} onChange={e => setFormData({...formData, namaPelanggan: e.target.value.toUpperCase()})} className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500" />
               <div className="grid grid-cols-2 gap-4">
                 <input type="number" placeholder="NOMINAL" required value={formData.nominal} onChange={e => setFormData({...formData, nominal: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500" />
-                <input placeholder="NOMOR WHATSAPP (CONTOH: 628...)" required value={formData.noWhatsapp} onChange={e => setFormData({...formData, noWhatsapp: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500" />
+                <input placeholder="NOMOR WHATSAPP" required value={formData.noWhatsapp} onChange={e => setFormData({...formData, noWhatsapp: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <select value={formData.metodeBayar} onChange={e => setFormData({...formData, metodeBayar: e.target.value})} className="p-4 bg-slate-50 border-2 border-transparent rounded-2xl outline-none focus:border-blue-500">
@@ -288,39 +403,40 @@ export default function App() {
           <div className="bg-white rounded-[40px] border-4 border-white shadow-xl overflow-hidden">
             <div className="p-8 border-b-2 border-slate-50 flex justify-between items-center">
               <h2 className="text-xl">RIWAYAT DATA TERBARU</h2>
-              <div className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[8px]">TOTAL: {transactions.length} DATA</div>
             </div>
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 text-slate-400">
-                <tr>
-                  <th className="p-6">PELANGGAN</th>
-                  <th className="p-6">LAYANAN</th>
-                  <th className="p-6">TOTAL</th>
-                  <th className="p-6">STATUS</th>
-                  <th className="p-6 text-center">AKSI</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y-2 divide-slate-50">
-                {transactions.map(tx => (
-                  <tr key={tx.id} className="hover:bg-slate-50/50 group transition-all">
-                    <td className="p-6">
-                      <div className="font-black">{tx.namaPelanggan}</div>
-                      <div className="text-[7px] text-slate-300">{tx.tanggal}</div>
-                    </td>
-                    <td className="p-6 text-slate-500">{tx.jenisTransaksi}</td>
-                    <td className="p-6 text-blue-600">RP {tx.totalTagihan?.toLocaleString()}</td>
-                    <td className="p-6">
-                      <span className={`px-4 py-1 rounded-full text-[8px] ${tx.statusBayar === 'SUDAH BAYAR' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>{tx.statusBayar}</span>
-                    </td>
-                    <td className="p-6 flex justify-center gap-2">
-                      <button onClick={() => sendAgregatedWA(tx)} className="p-2 bg-green-500 text-white rounded-lg hover:scale-110"><Send size={12}/></button>
-                      <button onClick={() => { setFormData(tx); setEditingTxId(tx.id); setActiveTab('input'); }} className="p-2 bg-blue-500 text-white rounded-lg hover:scale-110"><Edit3 size={12}/></button>
-                      <button onClick={async () => { if(confirm('HAPUS DATA?')) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id)); }} className="p-2 text-red-200 hover:text-red-500"><Trash2 size={12}/></button>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 text-slate-400">
+                  <tr>
+                    <th className="p-6">PELANGGAN</th>
+                    <th className="p-6">LAYANAN</th>
+                    <th className="p-6">TOTAL</th>
+                    <th className="p-6">STATUS</th>
+                    <th className="p-6 text-center">AKSI</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y-2 divide-slate-50">
+                  {transactions.map(tx => (
+                    <tr key={tx.id} className="hover:bg-slate-50/50 group transition-all">
+                      <td className="p-6">
+                        <div className="font-black">{tx.namaPelanggan}</div>
+                        <div className="text-[7px] text-slate-300">{tx.tanggal}</div>
+                      </td>
+                      <td className="p-6 text-slate-500">{tx.jenisTransaksi}</td>
+                      <td className="p-6 text-blue-600">RP {tx.totalTagihan?.toLocaleString()}</td>
+                      <td className="p-6">
+                        <span className={`px-4 py-1 rounded-full text-[8px] ${tx.statusBayar === 'SUDAH BAYAR' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>{tx.statusBayar}</span>
+                      </td>
+                      <td className="p-6 flex justify-center gap-2">
+                        <button onClick={() => sendAgregatedWA(tx)} className="p-2 bg-green-500 text-white rounded-lg hover:scale-110"><Send size={12}/></button>
+                        <button onClick={() => { setFormData(tx); setEditingTxId(tx.id); setActiveTab('input'); }} className="p-2 bg-blue-500 text-white rounded-lg hover:scale-110"><Edit3 size={12}/></button>
+                        <button onClick={async () => { if(confirm('HAPUS DATA?')) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id)); }} className="p-2 text-red-200 hover:text-red-500"><Trash2 size={12}/></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -355,7 +471,6 @@ export default function App() {
                   <p className="text-xs text-orange-500">RP {stats.pending.toLocaleString()}</p>
                 </div>
               </div>
-              <p className="text-[7px] text-slate-600 italic">SISTEM MENGHITUNG OTOMATIS ASET BERDASARKAN SALDO INPUT DAN DATABASE PIUTANG.</p>
             </div>
           </div>
         )}
@@ -380,29 +495,6 @@ export default function App() {
                   </form>
                 </div>
               ))}
-            </div>
-            <div className="bg-white p-10 rounded-[40px] border-4 border-white shadow-xl flex flex-col md:flex-row gap-8 items-center">
-              <div className="flex-1 space-y-4">
-                <h3 className="text-xl">INFORMASI BISNIS</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <span className="ml-4 text-[7px] text-slate-400">NAMA USAHA</span>
-                    <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none" value={profile?.namaUsaha} onChange={async (e) => {
-                      const val = e.target.value.toUpperCase();
-                      setProfile({...profile, namaUsaha: val});
-                      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'profile'), { namaUsaha: val });
-                    }} />
-                  </div>
-                  <div className="space-y-1">
-                    <span className="ml-4 text-[7px] text-slate-400">MODAL AWAL (RP)</span>
-                    <input type="number" className="w-full p-4 bg-slate-50 rounded-2xl outline-none" value={profile?.modalAwal} onChange={async (e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      setProfile({...profile, modalAwal: val});
-                      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'profile'), { modalAwal: val });
-                    }} />
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         )}
