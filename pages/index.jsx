@@ -109,25 +109,68 @@ export default function App() {
 
   // KIRIM WHATSAPP
   const sendWA = (tx) => {
-    const msg = `*STRUK DIGITAL ${profile?.namaUsaha || 'PPOB'}*%0A` +
-                `----------------------------------------%0A` +
-                `TANGGAL: ${tx.tanggal}%0A` +
-                `PELANGGAN: ${tx.namaPelanggan}%0A` +
-                `LAYANAN: ${tx.jenisTransaksi}%0A` +
-                `TUJUAN: ${tx.noRekTujuan}%0A` +
-                `NOMINAL: Rp ${parseFloat(tx.nominal).toLocaleString()}%0A` +
-                `BIAYA ADMIN: Rp ${parseFloat(tx.fee).toLocaleString()}%0A` +
-                `----------------------------------------%0A` +
-                `*TOTAL TAGIHAN: Rp ${parseFloat(tx.totalTagihan).toLocaleString()}*%0A` +
-                `STATUS: ${tx.statusBayar}%0A` +
-                `----------------------------------------%0A` +
-                `TERIMA KASIH TELAH BERTRANSAKSI!`;
+    // Pastikan transaksi saat ini masuk dalam evaluasi, 
+    // berguna jika WA dikirim langsung setelah data baru disimpan (sebelum sinkronisasi Firestore selesai)
+    const isTxInState = transactions.some(t => t.id === tx.id);
+    const allTx = isTxInState ? transactions : [...transactions, tx];
+
+    // Status yang dianggap sebagai piutang (berdasarkan data master Anda)
+    const unpaidStatuses = ['BELUM BAYAR'];
+
+    // Filter transaksi pelanggan yang SAMA dan statusnya BELUM BAYAR
+    const unpaidTxList = allTx.filter(
+      (item) =>
+        item.namaPelanggan?.toLowerCase() === tx.namaPelanggan?.toLowerCase() &&
+        unpaidStatuses.includes(item.statusBayar)
+    );
+
+    let msg = '';
+
+    // Logika: Jika ada tunggakan, gabungkan. Jika tidak ada tunggakan, kirim struk tunggal.
+    if (unpaidTxList.length > 0) {
+      let totalSemuaTagihan = 0;
+      let rincianMsg = '';
+
+      unpaidTxList.forEach((item, index) => {
+        const tagihanItem = parseFloat(item.totalTagihan) || 0;
+        totalSemuaTagihan += tagihanItem;
+        rincianMsg += `${index + 1}. ${item.tanggal} | ${item.jenisTransaksi} (${item.noRekTujuan}) : Rp ${tagihanItem.toLocaleString('id-ID')}\n`;
+      });
+
+      msg = 
+        `*INFO TAGIHAN ${profile?.namaUsaha || 'PPOB'}*\n` +
+        `----------------------------------------\n` +
+        `Halo *${tx.namaPelanggan}*, berikut rincian tagihan transaksi Anda yang belum lunas:\n\n` +
+        `${rincianMsg}\n` +
+        `----------------------------------------\n` +
+        `*TOTAL KESELURUHAN: Rp ${totalSemuaTagihan.toLocaleString('id-ID')}*\n` +
+        `----------------------------------------\n` +
+        `Mohon agar dapat segera diselesaikan. Terima kasih atas kepercayaannya!`;
+
+    } else {
+      // Fallback: Kirim struk transaksi tunggal biasa (jika statusnya LUNAS dan tidak punya hutang lain)
+      msg = 
+        `*STRUK DIGITAL ${profile?.namaUsaha || 'PPOB'}*\n` +
+        `----------------------------------------\n` +
+        `TANGGAL: ${tx.tanggal}\n` +
+        `PELANGGAN: ${tx.namaPelanggan}\n` +
+        `LAYANAN: ${tx.jenisTransaksi}\n` +
+        `TUJUAN: ${tx.noRekTujuan}\n` +
+        `NOMINAL: Rp ${(parseFloat(tx.nominal) || 0).toLocaleString('id-ID')}\n` +
+        `BIAYA ADMIN: Rp ${(parseFloat(tx.fee) || 0).toLocaleString('id-ID')}\n` +
+        `----------------------------------------\n` +
+        `*TOTAL TAGIHAN: Rp ${(parseFloat(tx.totalTagihan) || 0).toLocaleString('id-ID')}*\n` +
+        `STATUS: ${tx.statusBayar}\n` +
+        `----------------------------------------\n` +
+        `TERIMA KASIH TELAH BERTRANSAKSI!`;
+    }
     
-    let phone = tx.noWhatsapp;
+    let phone = tx.noWhatsapp || '';
     if (phone.startsWith('0')) phone = '62' + phone.slice(1);
     if (!phone.startsWith('62')) phone = '62' + phone;
     
-    window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
+    // Gunakan encodeURIComponent agar karakter \n dan spasi aman di URL
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   // AUTH HANDLER
