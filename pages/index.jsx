@@ -46,6 +46,22 @@ const DEFAULT_CONFIG = {
   statusBayar: ['BELUM BAYAR', 'SUDAH BAYAR']
 };
 
+// FUNGSI HITUNG FEE OTOMATIS BERDASARKAN NOMINAL
+const calculateAutoFee = (nominal) => {
+  const amount = parseFloat(nominal) || 0;
+  
+  if (amount < 100000) {
+    return 3000;
+  } else if (amount < 500000) {
+    return 5000;
+  } else if (amount < 1000000) {
+    return 7000;
+  } else {
+    // 1% dari nominal untuk >= Rp1,000,000
+    return Math.round(amount * 0.01);
+  }
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -444,11 +460,48 @@ export default function App() {
                 </div>
                 <div className="space-y-2">
                     <label className="text-[10px] text-slate-400 tracking-widest ml-1 uppercase">NOMINAL (RP)</label>
-                    <input type="number" placeholder="0" value={formData.nominal} onChange={(e) => setFormData({...formData, nominal: e.target.value})} className="w-full p-4 bg-blue-50 border-none rounded-2xl outline-none font-black text-blue-600 text-lg" required />
+                    <input 
+                      type="number" 
+                      placeholder="0" 
+                      value={formData.nominal} 
+                      onChange={(e) => {
+                        const nominalValue = e.target.value;
+                        setFormData({
+                          ...formData, 
+                          nominal: nominalValue,
+                          fee: calculateAutoFee(nominalValue).toString()
+                        });
+                      }} 
+                      className="w-full p-4 bg-blue-50 border-none rounded-2xl outline-none font-black text-blue-600 text-lg" 
+                      required 
+                    />
+                    <p className="text-[8px] text-slate-400 italic mt-1">
+                      Fee otomatis: Rp {calculateAutoFee(formData.nominal).toLocaleString('id-ID')}
+                    </p>
                 </div>
                 <div className="space-y-2">
                     <label className="text-[10px] text-slate-400 tracking-widest ml-1 uppercase">ADMIN / LABA (RP)</label>
-                    <input type="number" placeholder="0" value={formData.fee} onChange={(e) => setFormData({...formData, fee: e.target.value})} className="w-full p-4 bg-green-50 border-none rounded-2xl outline-none font-black text-green-600 text-lg" required />
+                    <div className="flex gap-2">
+                      <input 
+                        type="number" 
+                        placeholder="0" 
+                        value={formData.fee} 
+                        onChange={(e) => setFormData({...formData, fee: e.target.value})} 
+                        className="flex-1 p-4 bg-green-50 border-none rounded-2xl outline-none font-black text-green-600 text-lg" 
+                        required 
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormData({...formData, fee: calculateAutoFee(formData.nominal).toString()})}
+                        className="px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-2xl font-black text-[10px] transition-all"
+                        title="Gunakan fee otomatis"
+                      >
+                        AUTO
+                      </button>
+                    </div>
+                    <p className="text-[8px] text-slate-400 italic mt-1">
+                      Klik AUTO untuk menggunakan perhitungan otomatis
+                    </p>
                 </div>
                 <div className="space-y-2">
                     <label className="text-[10px] text-slate-400 tracking-widest ml-1 uppercase">METODE BAYAR</label>
@@ -545,7 +598,7 @@ export default function App() {
                 <button 
                   onClick={sendBulkBilling}
                   disabled={selectedCustomers.size === 0}
-                  className={`px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all ${selectedCustomers.size === 0 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-green-600 text-white shadow-lg shadow-green-200 hover:scale-105 active:scale-95'}`}
+                  className={`px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all ${selectedCustomers.size === 0 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:scale-105 shadow-lg shadow-blue-100'}`}
                 >
                   <Send size={16}/> KIRIM {selectedCustomers.size} TAGIHAN
                 </button>
@@ -562,7 +615,7 @@ export default function App() {
                     <div 
                       key={customer.namaPelanggan}
                       onClick={() => toggleCustomerSelection(customer.namaPelanggan)}
-                      className={`p-4 rounded-2xl cursor-pointer transition-all border-2 flex items-center justify-between ${selectedCustomers.has(customer.namaPelanggan) ? 'bg-blue-50 border-blue-400' : 'bg-slate-50 border-slate-200 hover:border-slate-300'}`}
+                      className={`p-4 rounded-2xl cursor-pointer transition-all border-2 flex items-center justify-between ${selectedCustomers.has(customer.namaPelanggan) ? 'bg-blue-50 border-blue-600' : 'bg-slate-50 border-slate-200 hover:border-blue-300'}`}
                     >
                       <div className="flex items-center gap-4 flex-1">
                         <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${selectedCustomers.has(customer.namaPelanggan) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
