@@ -3,7 +3,7 @@ import {
   LayoutDashboard, PlusCircle, History, Calculator, Settings, 
   LogOut, Wallet, TrendingUp, AlertCircle, CheckCircle2, 
   Trash2, Loader2, Save, X, Plus, Building2, Phone, MessageSquare,
-  ChevronRight, ArrowRightLeft, CreditCard, Banknote, Edit3
+  ChevronRight, ArrowRightLeft, CreditCard, Banknote, Edit3, Send
 } from 'lucide-react';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -56,6 +56,8 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState('');
   const [bankBalances, setBankBalances] = useState({});
   const [editingId, setEditingId] = useState(null);
+  const [selectedCustomers, setSelectedCustomers] = useState(new Set());
+  const [showBillingPreview, setShowBillingPreview] = useState(null);
 
   const [formData, setFormData] = useState({
     tanggal: new Date().toISOString().split('T')[0],
@@ -171,6 +173,63 @@ export default function App() {
     
     // Gunakan encodeURIComponent agar karakter \n dan spasi aman di URL
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  // GET CUSTOMERS WITH UNPAID BALANCE
+  const getCustomersWithBalance = useMemo(() => {
+    const unpaidStatuses = ['BELUM BAYAR'];
+    const customerMap = {};
+
+    transactions.forEach(tx => {
+      if (unpaidStatuses.includes(tx.statusBayar)) {
+        const key = tx.namaPelanggan?.toLowerCase() || '';
+        if (!customerMap[key]) {
+          customerMap[key] = {
+            namaPelanggan: tx.namaPelanggan,
+            noWhatsapp: tx.noWhatsapp,
+            totalTagihan: 0,
+            transactionCount: 0,
+            transactions: []
+          };
+        }
+        customerMap[key].totalTagihan += parseFloat(tx.totalTagihan) || 0;
+        customerMap[key].transactionCount += 1;
+        customerMap[key].transactions.push(tx);
+      }
+    });
+
+    return Object.values(customerMap).sort((a, b) => b.totalTagihan - a.totalTagihan);
+  }, [transactions]);
+
+  // TOGGLE CUSTOMER SELECTION
+  const toggleCustomerSelection = (customerName) => {
+    const newSelected = new Set(selectedCustomers);
+    if (newSelected.has(customerName)) {
+      newSelected.delete(customerName);
+    } else {
+      newSelected.add(customerName);
+    }
+    setSelectedCustomers(newSelected);
+  };
+
+  // SEND BULK BILLING
+  const sendBulkBilling = async () => {
+    if (selectedCustomers.size === 0) {
+      alert('PILIH MINIMAL 1 PELANGGAN');
+      return;
+    }
+
+    const customersToSend = getCustomersWithBalance.filter(c => 
+      selectedCustomers.has(c.namaPelanggan)
+    );
+
+    for (const customer of customersToSend) {
+      await new Promise(resolve => setTimeout(resolve, 500)); // Delay to prevent WhatsApp blocking
+      sendWA(customer.transactions[0]);
+    }
+
+    setSelectedCustomers(new Set());
+    alert(`TAGIHAN TELAH DIKIRIM KE ${customersToSend.length} PELANGGAN`);
   };
 
   // AUTH HANDLER
@@ -301,6 +360,7 @@ export default function App() {
             { id: 'dashboard', icon: LayoutDashboard, label: 'DASHBOARD' },
             { id: 'input', icon: PlusCircle, label: 'TRANSAKSI BARU' },
             { id: 'history', icon: History, label: 'RIWAYAT' },
+            { id: 'billing', icon: Send, label: 'BILLING MASSAL' },
             { id: 'calculator', icon: Calculator, label: 'CEK SALDO' },
             { id: 'settings', icon: Settings, label: 'PENGATURAN' },
           ].map(item => (
@@ -470,6 +530,57 @@ export default function App() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'billing' && (
+          <div className="space-y-6">
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+              <div className="flex justify-between items-center mb-8">
+                <div>
+                  <h3 className="font-black text-[12px] uppercase tracking-widest text-slate-800">DAFTAR PELANGGAN DENGAN TAGIHAN</h3>
+                  <p className="text-[9px] text-slate-400 font-black uppercase mt-2">{getCustomersWithBalance.length} PELANGGAN DENGAN PIUTANG</p>
+                </div>
+                <button 
+                  onClick={sendBulkBilling}
+                  disabled={selectedCustomers.size === 0}
+                  className={`px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all ${selectedCustomers.size === 0 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-green-600 text-white shadow-lg shadow-green-200 hover:scale-105 active:scale-95'}`}
+                >
+                  <Send size={16}/> KIRIM {selectedCustomers.size} TAGIHAN
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {getCustomersWithBalance.length === 0 ? (
+                  <div className="text-center py-12">
+                    <AlertCircle size={32} className="mx-auto text-slate-300 mb-2"/>
+                    <p className="text-[11px] font-black text-slate-400 uppercase">TIDAK ADA PELANGGAN DENGAN TAGIHAN</p>
+                  </div>
+                ) : (
+                  getCustomersWithBalance.map((customer) => (
+                    <div 
+                      key={customer.namaPelanggan}
+                      onClick={() => toggleCustomerSelection(customer.namaPelanggan)}
+                      className={`p-4 rounded-2xl cursor-pointer transition-all border-2 flex items-center justify-between ${selectedCustomers.has(customer.namaPelanggan) ? 'bg-blue-50 border-blue-400' : 'bg-slate-50 border-slate-200 hover:border-slate-300'}`}
+                    >
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${selectedCustomers.has(customer.namaPelanggan) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
+                          {selectedCustomers.has(customer.namaPelanggan) && <CheckCircle2 size={16} className="text-white" />}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-black text-[11px] text-slate-900 uppercase">{customer.namaPelanggan}</p>
+                          <p className="text-[9px] text-slate-400 font-bold">{customer.transactionCount} TRANSAKSI | {customer.noWhatsapp}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-black text-[11px] text-slate-900 uppercase">RP {customer.totalTagihan.toLocaleString()}</p>
+                        <p className="text-[8px] text-slate-400 font-bold">TOTAL TAGIHAN</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         )}
