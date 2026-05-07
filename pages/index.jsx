@@ -270,7 +270,7 @@ export default function App() {
     } catch (err) { alert(err.message.toUpperCase()); }
   };
 
-  // SIMPAN/EDIT TRANSAKSI
+  // SIMPAN/EDIT TRANSAKSI (TANPA AUTO SEND WA)
   const saveTransaction = async (e) => {
     e.preventDefault();
     if (!user) return;
@@ -284,15 +284,18 @@ export default function App() {
     };
 
     try {
+      setSaveStatus('loading');
       if (editingId) {
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', editingId), payload);
         setEditingId(null);
+        setSaveStatus('success');
       } else {
         payload.createdAt = new Date().toISOString();
-        const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), payload);
-        sendWA({ ...payload, id: docRef.id });
+        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), payload);
+        setSaveStatus('success');
       }
-      setActiveTab('history');
+      
+      // Reset form
       setFormData({
         tanggal: new Date().toISOString().split('T')[0],
         jenisTransaksi: '',
@@ -306,7 +309,16 @@ export default function App() {
         statusBayar: 'BELUM BAYAR',
         keterangan: ''
       });
-    } catch (err) { alert("GAGAL MENYIMPAN: " + err.message.toUpperCase()); }
+
+      // Auto switch to history tab
+      setActiveTab('history');
+      
+      // Clear success status after 2 seconds
+      setTimeout(() => setSaveStatus(''), 2000);
+    } catch (err) { 
+      alert("GAGAL MENYIMPAN: " + err.message.toUpperCase());
+      setSaveStatus('error');
+    }
   };
 
   const handleEdit = (tx) => {
@@ -527,10 +539,15 @@ export default function App() {
                         <option value="SUDAH BAYAR">LUNAS (SUDAH BAYAR)</option>
                     </select>
                 </div>
-                <button className="md:col-span-2 w-full bg-blue-600 text-white py-5 rounded-[1.5rem] font-black uppercase tracking-widest shadow-xl shadow-blue-100 mt-4 flex items-center justify-center gap-3 hover:scale-[1.01] transition-all">
-                   {editingId ? <Save size={20}/> : <MessageSquare size={20}/>} 
-                   {editingId ? 'PERBARUI DATA' : 'SIMPAN & KIRIM STRUK WA'}
+                <button 
+                  type="submit"
+                  disabled={saveStatus === 'loading'}
+                  className="md:col-span-2 w-full bg-blue-600 text-white py-5 rounded-[1.5rem] font-black uppercase tracking-widest shadow-xl shadow-blue-100 mt-4 flex items-center justify-center gap-3 hover:scale-[1.01] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                   {saveStatus === 'loading' ? <Loader2 size={20} className="animate-spin"/> : <Save size={20}/>} 
+                   {editingId ? 'PERBARUI DATA' : 'SIMPAN TRANSAKSI'}
                 </button>
+                {saveStatus === 'success' && <p className="md:col-span-2 text-center text-green-600 font-black text-[11px] uppercase tracking-widest">✓ DATA BERHASIL DISIMPAN</p>}
             </form>
           </div>
         )}
@@ -574,9 +591,9 @@ export default function App() {
                       </td>
                       <td className="p-6">
                         <div className="flex justify-center gap-2">
-                           <button onClick={() => sendWA(tx)} className="p-2 bg-green-50 text-green-600 rounded-lg"><MessageSquare size={14}/></button>
-                           <button onClick={() => handleEdit(tx)} className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Edit3 size={14}/></button>
-                           <button onClick={async () => { if(confirm("HAPUS DATA INI?")) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id)) }} className="p-2 text-red-300 hover:text-red-500"><Trash2 size={14}/></button>
+                           <button onClick={() => sendWA(tx)} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-all" title="Kirim via WhatsApp"><MessageSquare size={14}/></button>
+                           <button onClick={() => handleEdit(tx)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all" title="Edit"><Edit3 size={14}/></button>
+                           <button onClick={async () => { if(confirm("HAPUS DATA INI?")) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id)) }} className="p-2 text-red-300 hover:text-red-500 transition-all" title="Hapus"><Trash2 size={14}/></button>
                         </div>
                       </td>
                     </tr>
